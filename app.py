@@ -1,6 +1,6 @@
 import pyodbc  
 import struct  
-from azure.identity import DefaultAzureCredential  
+import msal  
 from typing import Union  
 from fastapi import FastAPI, HTTPException  
 from pydantic import BaseModel  
@@ -59,7 +59,6 @@ def get_persons():
             cursor = conn.cursor()  
             cursor.execute("SELECT * FROM Persons")  
             for row in cursor.fetchall():  
-                print(row.FirstName, row.LastName)  
                 rows.append({"ID": row.ID, "FirstName": row.FirstName, "LastName": row.LastName})  
     except Exception as e:  
         raise HTTPException(status_code=500, detail=str(e))  
@@ -122,11 +121,19 @@ def delete_person(person_id: int):
     except Exception as e:  
         raise HTTPException(status_code=500, detail=str(e))  
   
-# Function to get a connection to the database  
+# Function to get a connection to the database using Managed Identity  
 def get_conn():  
-    credential = DefaultAzureCredential(exclude_interactive_browser_credential=False)  
-    token_bytes = credential.get_token("https://database.windows.net/.default").token.encode("UTF-16-LE")  
-    token_struct = struct.pack(f'<I{len(token_bytes)}s', len(token_bytes), token_bytes)  
-    SQL_COPT_SS_ACCESS_TOKEN = 1256  # This connection option is defined by Microsoft in msodbcsql.h  
-    conn = pyodbc.connect(connection_string, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})  
-    return conn  
+    client_id = 'YOUR_CLIENT_ID'  # Replace with your Managed Identity Client ID  
+    managed_identity = msal.UserAssignedManagedIdentity(client_id=client_id)  
+    global_app = msal.ManagedIdentityClient(managed_identity, http_client=requests.Session())  
+    result = global_app.acquire_token_for_client(resource='https://database.windows.net/')  
+      
+    if "access_token" in result:  
+        print("Token obtained!")  
+        token_bytes = result['access_token'].encode("UTF-16-LE")  
+        token_struct = struct.pack(f'<I{len(token_bytes)}s', len(token_bytes), token_bytes)  
+        SQL_COPT_SS_ACCESS_TOKEN = 1256  # This connection option is defined by Microsoft in msodbcsql.h  
+        conn = pyodbc.connect(connection_string, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})  
+        return conn  
+    else:  
+        raise HTTPException(status_code=500, detail="Failed to obtain access token")  
