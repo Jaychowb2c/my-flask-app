@@ -122,9 +122,12 @@ def delete_person(person_id: int):
     except Exception as e:  
         raise HTTPException(status_code=500, detail=str(e))  
   
-# Function to get a connection to the database  
+# Function to get a connection to the database 
+
+from azure.identity import ManagedIdentityCredential  
+  
 def get_conn():  
-    credential = DefaultAzureCredential(exclude_interactive_browser_credential=False)  
+    credential = ManagedIdentityCredential()  
     token_bytes = credential.get_token("https://database.windows.net/.default").token.encode("UTF-16-LE")  
     token_struct = struct.pack(f'<I{len(token_bytes)}s', len(token_bytes), token_bytes)  
     SQL_COPT_SS_ACCESS_TOKEN = 1256  # This connection option is defined by Microsoft in msodbcsql.h  
