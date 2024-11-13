@@ -123,7 +123,7 @@ def delete_person(person_id: int):
   
 # Function to get a connection to the database using Managed Identity  
 def get_conn():  
-    client_id = 'YOUR_CLIENT_ID'  # Replace with your Managed Identity Client ID  
+    client_id = '7cb9b7d1-7330-41ab-8846-3c897aff915c'  # Replace with your Managed Identity Client ID  
     managed_identity = msal.UserAssignedManagedIdentity(client_id=client_id)  
     global_app = msal.ManagedIdentityClient(managed_identity, http_client=requests.Session())  
     result = global_app.acquire_token_for_client(resource='https://database.windows.net/')  
