@@ -1,6 +1,6 @@
 import pyodbc  
 import struct  
-from azure.identity import DefaultAzureCredential  
+from azure.identity import ManagedIdentityCredential  
 from typing import Union  
 from fastapi import FastAPI, HTTPException  
 from pydantic import BaseModel  
@@ -125,11 +125,15 @@ def delete_person(person_id: int):
 # Function to get a connection to the database 
 
 from azure.identity import ManagedIdentityCredential  
-  
+   
 def get_conn():  
     credential = ManagedIdentityCredential()  
-    token_bytes = credential.get_token("https://database.windows.net/.default").token.encode("UTF-16-LE")  
+    token = credential.get_token("https://database.windows.net/.default")  
+    token_bytes = token.token.encode("utf-16-le")  
     token_struct = struct.pack(f'<I{len(token_bytes)}s', len(token_bytes), token_bytes)  
     SQL_COPT_SS_ACCESS_TOKEN = 1256  # This connection option is defined by Microsoft in msodbcsql.h  
-    conn = pyodbc.connect(connection_string, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})  
+    conn = pyodbc.connect(  
+        "Driver={ODBC Driver 18 for SQL Server};Server=tcp:jaysqltest.database.windows.net,1433;Database=SQLfortest;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;",  
+        attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct}  
+    )  
     return conn  
