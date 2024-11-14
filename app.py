@@ -121,7 +121,7 @@ def get_conn():
     client_id = os.getenv('AZURE_SQL_USER')  
   
     # Construct the connection string  
-    conn_string = f"Driver={{ODBC Driver 18 for SQL Server}};Server=tcp:jaysqltest.database.windows.net,1433;Database=SQLfortest;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"  
+    conn_string = f"Server=tcp:jaysqltest.database.windows.net,1433;Initial Catalog=SQLfortest;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;Authentication="Active Directory Default";  
   
     if authentication == 'ActiveDirectoryMsi':  
         # For system-assigned managed identity  
