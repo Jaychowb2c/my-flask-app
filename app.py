@@ -34,6 +34,8 @@ def startup():
             );  
         """)  
         conn.commit()  
+        cursor.close()  
+        conn.close()  
     except Exception as e:  
         print(f"Error during table creation: {e}")  
   
@@ -45,11 +47,13 @@ def root():
 def get_persons():  
     rows = []  
     try:  
-        with get_conn() as conn:  
-            cursor = conn.cursor()  
-            cursor.execute("SELECT * FROM Persons")  
-            for row in cursor.fetchall():  
-                rows.append({"ID": row.ID, "FirstName": row.FirstName, "LastName": row.LastName})  
+        conn = get_conn()  
+        cursor = conn.cursor()  
+        cursor.execute("SELECT * FROM Persons")  
+        for row in cursor.fetchall():  
+            rows.append({"ID": row.ID, "FirstName": row.FirstName, "LastName": row.LastName})  
+        cursor.close()  
+        conn.close()  
     except Exception as e:  
         raise HTTPException(status_code=500, detail=str(e))  
     return rows  
@@ -57,24 +61,28 @@ def get_persons():
 @app.get("/person/{person_id}")  
 def get_person(person_id: int):  
     try:  
-        with get_conn() as conn:  
-            cursor = conn.cursor()  
-            cursor.execute("SELECT * FROM Persons WHERE ID = ?", person_id)  
-            row = cursor.fetchone()  
-            if row:  
-                return {"ID": row.ID, "FirstName": row.FirstName, "LastName": row.LastName}  
-            else:  
-                raise HTTPException(status_code=404, detail="Person not found")  
+        conn = get_conn()  
+        cursor = conn.cursor()  
+        cursor.execute("SELECT * FROM Persons WHERE ID = ?", person_id)  
+        row = cursor.fetchone()  
+        cursor.close()  
+        conn.close()  
+        if row:  
+            return {"ID": row.ID, "FirstName": row.FirstName, "LastName": row.LastName}  
+        else:  
+            raise HTTPException(status_code=404, detail="Person not found")  
     except Exception as e:  
         raise HTTPException(status_code=500, detail=str(e))  
   
 @app.post("/person")  
 def create_person(item: Person):  
     try:  
-        with get_conn() as conn:  
-            cursor = conn.cursor()  
-            cursor.execute("INSERT INTO Persons (FirstName, LastName) VALUES (?, ?)", item.first_name, item.last_name)  
-            conn.commit()  
+        conn = get_conn()  
+        cursor = conn.cursor()  
+        cursor.execute("INSERT INTO Persons (FirstName, LastName) VALUES (?, ?)", item.first_name, item.last_name)  
+        conn.commit()  
+        cursor.close()  
+        conn.close()  
     except Exception as e:  
         raise HTTPException(status_code=500, detail=str(e))  
     return item  
@@ -82,32 +90,37 @@ def create_person(item: Person):
 @app.put("/person/{person_id}")  
 def update_person(person_id: int, item: UpdatePerson):  
     try:  
-        with get_conn() as conn:  
-            cursor = conn.cursor()  
-            if item.first_name is not None:  
-                cursor.execute("UPDATE Persons SET FirstName = ? WHERE ID = ?", item.first_name, person_id)  
-            if item.last_name is not None:  
-                cursor.execute("UPDATE Persons SET LastName = ? WHERE ID = ?", item.last_name, person_id)  
-            conn.commit()  
-            cursor.execute("SELECT * FROM Persons WHERE ID = ?", person_id)  
-            row = cursor.fetchone()  
-            if row:  
-                return {"ID": row.ID, "FirstName": row.FirstName, "LastName": row.LastName}  
-            else:  
-                raise HTTPException(status_code=404, detail="Person not found")  
+        conn = get_conn()  
+        cursor = conn.cursor()  
+        if item.first_name is not None:  
+            cursor.execute("UPDATE Persons SET FirstName = ? WHERE ID = ?", item.first_name, person_id)  
+        if item.last_name is not None:  
+            cursor.execute("UPDATE Persons SET LastName = ? WHERE ID = ?", item.last_name, person_id)  
+        conn.commit()  
+        cursor.execute("SELECT * FROM Persons WHERE ID = ?", person_id)  
+        row = cursor.fetchone()  
+        cursor.close()  
+        conn.close()  
+        if row:  
+            return {"ID": row.ID, "FirstName": row.FirstName, "LastName": row.LastName}  
+        else:  
+            raise HTTPException(status_code=404, detail="Person not found")  
     except Exception as e:  
         raise HTTPException(status_code=500, detail=str(e))  
   
 @app.delete("/person/{person_id}")  
 def delete_person(person_id: int):  
     try:  
-        with get_conn() as conn:  
-            cursor = conn.cursor()  
-            cursor.execute("DELETE FROM Persons WHERE ID = ?", person_id)  
-            conn.commit()  
-            if cursor.rowcount == 0:  
-                raise HTTPException(status_code=404, detail="Person not found")  
-            return {"detail": "Person deleted"}  
+        conn = get_conn()  
+        cursor = conn.cursor()  
+        cursor.execute("DELETE FROM Persons WHERE ID = ?", person_id)  
+        conn.commit()  
+        rows_affected = cursor.rowcount  
+        cursor.close()  
+        conn.close()  
+        if rows_affected == 0:  
+            raise HTTPException(status_code=404, detail="Person not found")  
+        return {"detail": "Person deleted"}  
     except Exception as e:  
         raise HTTPException(status_code=500, detail=str(e))  
   
@@ -134,7 +147,5 @@ def get_conn():
   
     # Connect to the database using the access token  
     conn = pyodbc.connect(conn_string, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})  
-  
-    return conn  
   
     return conn  
