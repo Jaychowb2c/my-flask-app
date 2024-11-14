@@ -111,35 +111,28 @@ def delete_person(person_id: int):
     except Exception as e:  
         raise HTTPException(status_code=500, detail=str(e))  
   
-# Function to get a connection to the database  
+# Function to get a connection to the database using user-assigned managed identity  
 def get_conn():  
     # Retrieve environment variables  
     server = os.getenv('AZURE_SQL_SERVER')  
     port = os.getenv('AZURE_SQL_PORT', 1433)  # Default to 1433 if not set  
     database = os.getenv('AZURE_SQL_DATABASE')  
-    authentication = os.getenv('AZURE_SQL_AUTHENTICATION')  
     client_id = os.getenv('AZURE_SQL_USER')  
   
-    # Construct the connection string  
-    conn_string = f"Driver={{ODBC Driver 18 for SQL Server}};Server={server},{port};Database={database};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"  
+    if not client_id:  
+        raise ValueError("Client ID for user-assigned managed identity is not set.")  
   
-    if authentication == 'ActiveDirectoryMsi':  
-        # For system-assigned managed identity  
-        credential = ManagedIdentityCredential()  
-        token = credential.get_token("https://database.windows.net/.default")  
-        token_bytes = token.token.encode("utf-16-le")  
-        token_struct = struct.pack(f'<I{len(token_bytes)}s', len(token_bytes), token_bytes)  
-        SQL_COPT_SS_ACCESS_TOKEN = 1256  # This connection option is defined by Microsoft in msodbcsql.h  
-        conn = pyodbc.connect(conn_string, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})  
-    else:  
-        # For user-assigned managed identity  
-        if not client_id:  
-            raise ValueError("Client ID for user-assigned managed identity is not set.")  
-        credential = ManagedIdentityCredential(client_id=client_id)  
-        token = credential.get_token("https://database.windows.net/.default")  
-        token_bytes = token.token.encode("utf-16-le")  
-        token_struct = struct.pack(f'<I{len(token_bytes)}s', len(token_bytes), token_bytes)  
-        SQL_COPT_SS_ACCESS_TOKEN = 1256  # This connection option is defined by Microsoft in msodbcsql.h  
-        conn = pyodbc.connect(conn_string, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})  
+    # Construct the connection string dynamically  
+    conn_string = f"Driver={{ODBC Driver 18 for SQL Server}};Server={server},{port};Database={database};UID={client_id};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"  
+  
+    # Get the access token using ManagedIdentityCredential  
+    credential = ManagedIdentityCredential(client_id=client_id)  
+    token = credential.get_token("https://database.windows.net/.default")  
+    token_bytes = token.token.encode("utf-16-le")  
+    token_struct = struct.pack(f'<I{len(token_bytes)}s', len(token_bytes), token_bytes)  
+    SQL_COPT_SS_ACCESS_TOKEN = 1256  # This connection option is defined by Microsoft in msodbcsql.h  
+  
+    # Connect to the database using the access token  
+    conn = pyodbc.connect(conn_string, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})  
   
     return conn  
