@@ -123,7 +123,7 @@ def get_conn():
         raise ValueError("Client ID for user-assigned managed identity is not set.")  
   
     # Construct the connection string dynamically  
-    conn_string = f"Driver={{ODBC Driver 18 for SQL Server}};Server={server},{port};Database={database};UID={client_id};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"  
+    conn_string = f"Driver={{ODBC Driver 18 for SQL Server}};Server={server},{port};Database={database};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"  
   
     # Get the access token using ManagedIdentityCredential  
     credential = ManagedIdentityCredential(client_id=client_id)  
@@ -134,5 +134,7 @@ def get_conn():
   
     # Connect to the database using the access token  
     conn = pyodbc.connect(conn_string, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})  
+  
+    return conn  
   
     return conn  
