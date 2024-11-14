@@ -2,9 +2,10 @@ import os
 import pyodbc  
 import struct  
 from azure.identity import ManagedIdentityCredential  
+from azure.keyvault.secrets import SecretClient  
 from typing import Union  
 from fastapi import FastAPI, HTTPException  
-from pydantic import BaseModel  
+from pydantic import BaseModel 
   
 # Model for Person  
 class Person(BaseModel):  
@@ -124,9 +125,11 @@ def delete_person(person_id: int):
     except Exception as e:  
         raise HTTPException(status_code=500, detail=str(e))  
   
-# Function to get a connection to the database using user-assigned managed identity  
+# Function to get a connection to the database using user-assigned managed identity and Key Vault  
 def get_conn():  
     # Retrieve environment variables  
+    key_vault_url = os.getenv('AZURE_KEY_VAULT_URL')  
+    secret_name = os.getenv('AZURE_SQL_CONNECTION_STRING_SECRET_NAME')  
     server = os.getenv('AZURE_SQL_SERVER')  
     port = os.getenv('AZURE_SQL_PORT', 1433)  # Default to 1433 if not set  
     database = os.getenv('AZURE_SQL_DATABASE')  
@@ -134,12 +137,20 @@ def get_conn():
   
     if not client_id:  
         raise ValueError("Client ID for user-assigned managed identity is not set.")  
+      
+    if not key_vault_url or not secret_name:  
+        raise ValueError("Key Vault URL or Secret Name is not set.")  
+      
+    # Get the connection string from Azure Key Vault  
+    credential = ManagedIdentityCredential(client_id=client_id)  
+    secret_client = SecretClient(vault_url=key_vault_url, credential=credential)  
+    secret = secret_client.get_secret(secret_name)  
+    base_conn_string = secret.value  
   
-    # Construct the connection string dynamically  
-    conn_string = f"Driver={{ODBC Driver 18 for SQL Server}};Server={server},{port};Database={database};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"  
+    # Construct the full connection string dynamically  
+    conn_string = f"{base_conn_string};Server={server},{port};Database={database}"  
   
     # Get the access token using ManagedIdentityCredential  
-    credential = ManagedIdentityCredential(client_id=client_id)  
     token = credential.get_token("https://database.windows.net/.default")  
     token_bytes = token.token.encode("utf-16-le")  
     token_struct = struct.pack(f'<I{len(token_bytes)}s', len(token_bytes), token_bytes)  
