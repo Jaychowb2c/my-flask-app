@@ -1,3 +1,4 @@
+import os  
 import pyodbc  
 import struct  
 from azure.identity import ManagedIdentityCredential  
@@ -14,17 +15,6 @@ class Person(BaseModel):
 class UpdatePerson(BaseModel):  
     first_name: Union[str, None] = None  
     last_name: Union[str, None] = None  
-  
-# Directly set the connection string  
-connection_string = (  
-    "Driver={ODBC Driver 18 for SQL Server};"  
-    "Server=tcp:jaysqltest.database.windows.net,1433;"  
-    "Database=SQLfortest;"  
-    "Encrypt=yes;"  
-    "TrustServerCertificate=no;"  
-    "Connection Timeout=30;"  
-    "Authentication=ActiveDirectoryMsi"  
-)  
   
 # Initialize FastAPI app  
 app = FastAPI()  
@@ -59,7 +49,6 @@ def get_persons():
             cursor = conn.cursor()  
             cursor.execute("SELECT * FROM Persons")  
             for row in cursor.fetchall():  
-                print(row.FirstName, row.LastName)  
                 rows.append({"ID": row.ID, "FirstName": row.FirstName, "LastName": row.LastName})  
     except Exception as e:  
         raise HTTPException(status_code=500, detail=str(e))  
@@ -122,18 +111,35 @@ def delete_person(person_id: int):
     except Exception as e:  
         raise HTTPException(status_code=500, detail=str(e))  
   
-# Function to get a connection to the database 
-
-from azure.identity import ManagedIdentityCredential  
-   
+# Function to get a connection to the database  
 def get_conn():  
-    credential = ManagedIdentityCredential()  
-    token = credential.get_token("https://database.windows.net/.default")  
-    token_bytes = token.token.encode("utf-16-le")  
-    token_struct = struct.pack(f'<I{len(token_bytes)}s', len(token_bytes), token_bytes)  
-    SQL_COPT_SS_ACCESS_TOKEN = 1256  # This connection option is defined by Microsoft in msodbcsql.h  
-    conn = pyodbc.connect(  
-        "Driver={ODBC Driver 18 for SQL Server};Server=tcp:jaysqltest.database.windows.net,1433;Database=SQLfortest;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;",  
-        attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct}  
-    )  
+    # Retrieve environment variables  
+    server = os.getenv('AZURE_SQL_SERVER')  
+    port = os.getenv('AZURE_SQL_PORT', 1433)  # Default to 1433 if not set  
+    database = os.getenv('AZURE_SQL_DATABASE')  
+    authentication = os.getenv('AZURE_SQL_AUTHENTICATION')  
+    client_id = os.getenv('AZURE_SQL_USER')  
+  
+    # Construct the connection string  
+    conn_string = f"Driver={{ODBC Driver 18 for SQL Server}};Server=tcp:jaysqltest.database.windows.net,1433;Database=SQLfortest;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"  
+  
+    if authentication == 'ActiveDirectoryMsi':  
+        # For system-assigned managed identity  
+        credential = ManagedIdentityCredential()  
+        token = credential.get_token("https://database.windows.net/.default")  
+        token_bytes = token.token.encode("utf-16-le")  
+        token_struct = struct.pack(f'<I{len(token_bytes)}s', len(token_bytes), token_bytes)  
+        SQL_COPT_SS_ACCESS_TOKEN = 1256  # This connection option is defined by Microsoft in msodbcsql.h  
+        conn = pyodbc.connect(conn_string, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})  
+    else:  
+        # For user-assigned managed identity  
+        if not client_id:  
+            raise ValueError("Client ID for user-assigned managed identity is not set.")  
+        credential = ManagedIdentityCredential(client_id=client_id)  
+        token = credential.get_token("https://database.windows.net/.default")  
+        token_bytes = token.token.encode("utf-16-le")  
+        token_struct = struct.pack(f'<I{len(token_bytes)}s', len(token_bytes), token_bytes)  
+        SQL_COPT_SS_ACCESS_TOKEN = 1256  # This connection option is defined by Microsoft in msodbcsql.h  
+        conn = pyodbc.connect(conn_string, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})  
+  
     return conn  
