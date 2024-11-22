@@ -130,33 +130,31 @@ def get_conn():
     # Retrieve environment variables  
     key_vault_url = os.getenv('AZURE_KEY_VAULT_URL')  
     secret_name = os.getenv('AZURE_SQL_CONNECTION_STRING_SECRET_NAME')  
-    server = os.getenv('AZURE_SQL_SERVER')  
-    port = os.getenv('AZURE_SQL_PORT', 1433)  # Default to 1433 if not set  
-    database = os.getenv('AZURE_SQL_DATABASE')  
     client_id = os.getenv('AZURE_SQL_USER')  
-  
+      
     if not client_id:  
         raise ValueError("Client ID for user-assigned managed identity is not set.")  
-  
+      
     if not key_vault_url or not secret_name:  
         raise ValueError("Key Vault URL or Secret Name is not set.")  
-  
+      
     # Get the connection string from Azure Key Vault  
     credential = ManagedIdentityCredential(client_id=client_id)  
     secret_client = SecretClient(vault_url=key_vault_url, credential=credential)  
     secret = secret_client.get_secret(secret_name)  
     base_conn_string = secret.value  
-  
-    # Construct the full connection string dynamically  
-    conn_string = f"{base_conn_string};Server={server},{port};Database={database}"  
-  
+      
+    # Ensure 'Authentication' is not in the base connection string  
+    if 'Authentication' in base_conn_string:  
+        base_conn_string = base_conn_string.split(';Authentication')[0]  
+      
     # Get the access token using ManagedIdentityCredential  
     token = credential.get_token("https://database.windows.net/.default")  
     token_bytes = token.token.encode("utf-16-le")  
     token_struct = struct.pack(f'<I{len(token_bytes)}s', len(token_bytes), token_bytes)  
     SQL_COPT_SS_ACCESS_TOKEN = 1256  # This connection option is defined by Microsoft in msodbcsql.h  
-  
+      
     # Connect to the database using the access token  
-    conn = pyodbc.connect(conn_string, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})  
-  
+    conn = pyodbc.connect(base_conn_string, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})  
+      
     return conn  
