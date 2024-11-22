@@ -5,7 +5,7 @@ from azure.identity import ManagedIdentityCredential
 from azure.keyvault.secrets import SecretClient  
 from typing import Union  
 from fastapi import FastAPI, HTTPException  
-from pydantic import BaseModel 
+from pydantic import BaseModel  
   
 # Model for Person  
 class Person(BaseModel):  
@@ -102,7 +102,7 @@ def update_person(person_id: int, item: UpdatePerson):
         row = cursor.fetchone()  
         cursor.close()  
         conn.close()  
-        if row:  
+                if row:  
             return {"ID": row.ID, "FirstName": row.FirstName, "LastName": row.LastName}  
         else:  
             raise HTTPException(status_code=404, detail="Person not found")  
@@ -137,10 +137,10 @@ def get_conn():
   
     if not client_id:  
         raise ValueError("Client ID for user-assigned managed identity is not set.")  
-      
+  
     if not key_vault_url or not secret_name:  
         raise ValueError("Key Vault URL or Secret Name is not set.")  
-      
+  
     # Get the connection string from Azure Key Vault  
     credential = ManagedIdentityCredential(client_id=client_id)  
     secret_client = SecretClient(vault_url=key_vault_url, credential=credential)  
