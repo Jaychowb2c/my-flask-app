@@ -144,7 +144,7 @@ def get_conn():
     secret = secret_client.get_secret(secret_name)  
     base_conn_string = secret.value  
       
-    # Ensure 'Authentication' is not in the base connection string  
+    # Remove 'Authentication' parameter if it exists  
     if 'Authentication' in base_conn_string:  
         base_conn_string = base_conn_string.split(';Authentication')[0]  
       
