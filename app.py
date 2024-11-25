@@ -1,29 +1,33 @@
+import os  
 import pyodbc  
 import struct  
-from azure import identity  
-from typing import Union  
-from fastapi import FastAPI  
+from azure.identity import ManagedIdentityCredential  
+from azure.keyvault.secrets import SecretClient  
+from fastapi import FastAPI, HTTPException  
 from pydantic import BaseModel  
+from typing import Union 
   
 # Model for Person  
 class Person(BaseModel):  
     first_name: str  
     last_name: Union[str, None] = None  
   
-# Directly set the connection string  
-connection_string = "Driver={ODBC Driver 18 for SQL Server};Server=tcp:jaysqltest.database.windows.net,1433;Database=SQLfortest;Uid=forsqlserver;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;Authentication=ActiveDirectoryIntegrated"  
+# Model for updating a Person  
+class UpdatePerson(BaseModel):  
+    first_name: Union[str, None] = None  
+    last_name: Union[str, None] = None  
   
 # Initialize FastAPI app  
 app = FastAPI()  
   
-@app.get("/")  
-def root():  
-    print("Root of Person API")  
+@app.on_event("startup")  
+def startup():  
+    print("Starting up and creating the table if it doesn't exist.")  
     try:  
         conn = get_conn()  
         cursor = conn.cursor()  
-        # Table should be created ahead of time in production app.  
         cursor.execute("""  
+            IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Persons' and xtype='U')  
             CREATE TABLE Persons (  
                 ID int NOT NULL PRIMARY KEY IDENTITY,  
                 FirstName varchar(255),  
@@ -31,43 +35,121 @@ def root():
             );  
         """)  
         conn.commit()  
+        cursor.close()  
+        conn.close()  
     except Exception as e:  
-        # Table may already exist  
-        print(e)  
+        print(f"Error during table creation: {e}")  
+  
+@app.get("/")  
+def root():  
     return "Person API"  
   
-@app.get("/all")  
+@app.get("/persons")  
 def get_persons():  
     rows = []  
-    with get_conn() as conn:  
+    try:  
+        conn = get_conn()  
         cursor = conn.cursor()  
         cursor.execute("SELECT * FROM Persons")  
         for row in cursor.fetchall():  
-            print(row.FirstName, row.LastName)  
-            rows.append(f"{row.ID}, {row.FirstName}, {row.LastName}")  
+            rows.append({"ID": row.ID, "FirstName": row.FirstName, "LastName": row.LastName})  
+        cursor.close()  
+        conn.close()  
+    except Exception as e:  
+        raise HTTPException(status_code=500, detail=str(e))  
     return rows  
   
 @app.get("/person/{person_id}")  
 def get_person(person_id: int):  
-    with get_conn() as conn:  
+    try:  
+        conn = get_conn()  
         cursor = conn.cursor()  
         cursor.execute("SELECT * FROM Persons WHERE ID = ?", person_id)  
         row = cursor.fetchone()  
-        return f"{row.ID}, {row.FirstName}, {row.LastName}"  
+        cursor.close()  
+        conn.close()  
+        if row:  
+            return {"ID": row.ID, "FirstName": row.FirstName, "LastName": row.LastName}  
+        else:  
+            raise HTTPException(status_code=404, detail="Person not found")  
+    except Exception as e:  
+        raise HTTPException(status_code=500, detail=str(e))  
   
 @app.post("/person")  
 def create_person(item: Person):  
-    with get_conn() as conn:  
+    try:  
+        conn = get_conn()  
         cursor = conn.cursor()  
         cursor.execute("INSERT INTO Persons (FirstName, LastName) VALUES (?, ?)", item.first_name, item.last_name)  
         conn.commit()  
+        cursor.close()  
+        conn.close()  
+    except Exception as e:  
+        raise HTTPException(status_code=500, detail=str(e))  
     return item  
   
-# Function to get a connection to the database  
+@app.put("/person/{person_id}")  
+def update_person(person_id: int, item: UpdatePerson):  
+    try:  
+        conn = get_conn()  
+        cursor = conn.cursor()  
+        if item.first_name is not None:  
+            cursor.execute("UPDATE Persons SET FirstName = ? WHERE ID = ?", item.first_name, person_id)  
+        if item.last_name is not None:  
+            cursor.execute("UPDATE Persons SET LastName = ? WHERE ID = ?", item.last_name, person_id)  
+        conn.commit()  
+        cursor.execute("SELECT * FROM Persons WHERE ID = ?", person_id)  
+        row = cursor.fetchone()  
+        cursor.close()  
+        conn.close()  
+        if row:  
+            return {"ID": row.ID, "FirstName": row.FirstName, "LastName": row.LastName}  
+        else:  
+            raise HTTPException(status_code=404, detail="Person not found")  
+    except Exception as e:  
+        raise HTTPException(status_code=500, detail=str(e))  
+  
+@app.delete("/person/{person_id}")  
+def delete_person(person_id: int):  
+    try:  
+        conn = get_conn()  
+        cursor = conn.cursor()  
+        cursor.execute("DELETE FROM Persons WHERE ID = ?", person_id)  
+        conn.commit()  
+        rows_affected = cursor.rowcount  
+        cursor.close()  
+        conn.close()  
+        if rows_affected == 0:  
+            raise HTTPException(status_code=404, detail="Person not found")  
+        return {"detail": "Person deleted"}  
+    except Exception as e:  
+        raise HTTPException(status_code=500, detail=str(e))  
+  
+# Function to get a connection to the database using ManagedIdentityCredential  
 def get_conn():  
-    credential = identity.DefaultAzureCredential(exclude_interactive_browser_credential=False)  
-    token_bytes = credential.get_token("https://database.windows.net/.default").token.encode("UTF-16-LE")  
+    # Retrieve environment variables  
+    key_vault_url = os.getenv('AZURE_KEY_VAULT_URL')  
+    secret_name = os.getenv('AZURE_SQL_CONNECTION_STRING_SECRET_NAME')  
+    client_id = os.getenv('AZURE_SQL_USER')  
+  
+    if not key_vault_url or not secret_name:  
+        raise ValueError("Key Vault URL or Secret name is not set.")  
+    if not client_id:  
+        raise ValueError("Client ID for user-assigned managed identity is not set.")  
+  
+    # Retrieve the connection string from Azure Key Vault using ManagedIdentityCredential  
+    credential = ManagedIdentityCredential(client_id=client_id)  
+    client = SecretClient(vault_url=key_vault_url, credential=credential)  
+    secret = client.get_secret(secret_name)  
+    connection_string = secret.value  
+  
+    # Get the access token for Azure SQL Database using ManagedIdentityCredential  
+    token = credential.get_token("https://database.windows.net/.default")  
+    token_bytes = token.token.encode("utf-16-le")  
     token_struct = struct.pack(f'<I{len(token_bytes)}s', len(token_bytes), token_bytes)  
-    SQL_COPT_SS_ACCESS_TOKEN = 1256  # This connection option is defined by microsoft in msodbcsql.h  
+    SQL_COPT_SS_ACCESS_TOKEN = 1256  # This connection option is defined by Microsoft in msodbcsql.h  
+  
+    # Connect to the database using the access token  
     conn = pyodbc.connect(connection_string, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})  
+  
     return conn  
