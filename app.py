@@ -147,6 +147,9 @@ def get_conn():
     token_bytes = token.token.encode("utf-16-le")  
     token_struct = struct.pack(f'<I{len(token_bytes)}s', len(token_bytes), token_bytes)  
     SQL_COPT_SS_ACCESS_TOKEN = 1256  # This connection option is defined by Microsoft in msodbcsql.h  
+
+    # Update connection string to ensure it uses ActiveDirectoryMsi for authentication  
+    connection_string = connection_string.replace('Authentication=ActiveDirectoryIntegrated', 'Authentication=ActiveDirectoryMsi')  
   
     # Connect to the database using the access token  
     conn = pyodbc.connect(connection_string, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})  
