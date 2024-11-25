@@ -1,11 +1,11 @@
 import os  
 import pyodbc  
 import struct  
-from azure.identity import DefaultAzureCredential, ManagedIdentityCredential  
+from azure.identity import DefaultAzureCredential  
 from azure.keyvault.secrets import SecretClient  
 from typing import Union  
 from fastapi import FastAPI, HTTPException  
-from pydantic import BaseModel
+from pydantic import BaseModel 
   
 # Model for Person  
 class Person(BaseModel):  
@@ -130,20 +130,20 @@ def get_conn():
     # Retrieve environment variables  
     key_vault_url = os.getenv('AZURE_KEY_VAULT_URL')  
     secret_name = os.getenv('AZURE_SQL_CONNECTION_STRING_SECRET_NAME')  
-    client_id = os.getenv('AZURE_SQL_USER')  
+    client_id = os.getenv('AZURE_CLIENT_ID')  
   
     if not key_vault_url or not secret_name or not client_id:  
         raise ValueError("Key Vault URL, Secret name, or Client ID is not set.")  
   
-    # Retrieve the connection string from Azure Key Vault  
-    credential = DefaultAzureCredential()  
+    # Retrieve the connection string from Azure Key Vault using DefaultAzureCredential  
+    credential = DefaultAzureCredential(managed_identity_client_id=client_id)  
     client = SecretClient(vault_url=key_vault_url, credential=credential)  
     secret = client.get_secret(secret_name)  
-    connection_string = secret.value 
+    connection_string = secret.value  
   
-    # Get the access token using ManagedIdentityCredential  
-    credential = ManagedIdentityCredential(client_id=client_id)  
-    token = credential.get_token("https://database.windows.net/.default")  
+    # Get the access token for Azure SQL Database using DefaultAzureCredential  
+    token_credential = DefaultAzureCredential(managed_identity_client_id=client_id)  
+    token = token_credential.get_token("https://database.windows.net/.default")  
     token_bytes = token.token.encode("utf-16-le")  
     token_struct = struct.pack(f'<I{len(token_bytes)}s', len(token_bytes), token_bytes)  
     SQL_COPT_SS_ACCESS_TOKEN = 1256  # This connection option is defined by Microsoft in msodbcsql.h  
