@@ -1,10 +1,11 @@
 import os  
 import pyodbc  
 import struct  
-from azure.identity import ManagedIdentityCredential  
+from azure.identity import DefaultAzureCredential, ManagedIdentityCredential  
+from azure.keyvault.secrets import SecretClient  
 from typing import Union  
 from fastapi import FastAPI, HTTPException  
-from pydantic import BaseModel  
+from pydantic import BaseModel
   
 # Model for Person  
 class Person(BaseModel):  
@@ -124,19 +125,21 @@ def delete_person(person_id: int):
     except Exception as e:  
         raise HTTPException(status_code=500, detail=str(e))  
   
-# Function to get a connection to the database using user-assigned managed identity  
+# Function to get a connection to the database using a connection string from Azure Key Vault  
 def get_conn():  
     # Retrieve environment variables  
-    server = os.getenv('AZURE_SQL_SERVER')  
-    port = os.getenv('AZURE_SQL_PORT', 1433)  # Default to 1433 if not set  
-    database = os.getenv('AZURE_SQL_DATABASE')  
+    key_vault_url = os.getenv('AZURE_KEY_VAULT_URL')  
+    secret_name = os.getenv('AZURE_SQL_CONNECTION_STRING_SECRET_NAME')  
     client_id = os.getenv('AZURE_SQL_USER')  
   
-    if not client_id:  
-        raise ValueError("Client ID for user-assigned managed identity is not set.")  
+    if not key_vault_url or not secret_name or not client_id:  
+        raise ValueError("Key Vault URL, Secret name, or Client ID is not set.")  
   
-    # Construct the connection string dynamically  
-    conn_string = f"Driver={{ODBC Driver 18 for SQL Server}};Server={server},{port};Database={database};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"  
+    # Retrieve the connection string from Azure Key Vault  
+    credential = DefaultAzureCredential()  
+    client = SecretClient(vault_url=key_vault_url, credential=credential)  
+    secret = client.get_secret(secret_name)  
+    connection_string = secret.value 
   
     # Get the access token using ManagedIdentityCredential  
     credential = ManagedIdentityCredential(client_id=client_id)  
@@ -146,6 +149,6 @@ def get_conn():
     SQL_COPT_SS_ACCESS_TOKEN = 1256  # This connection option is defined by Microsoft in msodbcsql.h  
   
     # Connect to the database using the access token  
-    conn = pyodbc.connect(conn_string, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})  
+    conn = pyodbc.connect(connection_string, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})  
   
     return conn  
