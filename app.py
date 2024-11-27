@@ -144,7 +144,7 @@ def get_conn():
     token_bytes = token.token.encode("utf-16-le")  
     token_struct = struct.pack(f'<I{len(token_bytes)}s', len(token_bytes), token_bytes)  
     SQL_COPT_SS_ACCESS_TOKEN = 1256  # This connection option is defined by Microsoft in msodbcsql.h  
-  
+
     # Connect to the database using the access token  
     conn = pyodbc.connect(conn_string, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: token_struct})  
   
